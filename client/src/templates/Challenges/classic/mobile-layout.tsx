@@ -1,7 +1,5 @@
 import i18next from 'i18next';
 import React, { Component, ReactElement } from 'react';
-import { faWindowRestore } from '@fortawesome/free-solid-svg-icons';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { createSelector } from 'reselect';
 import { connect } from 'react-redux';
 import { Tabs, TabsContent, TabsTrigger, TabsList } from '@freecodecamp/ui';
@@ -9,22 +7,26 @@ import { Tabs, TabsContent, TabsTrigger, TabsList } from '@freecodecamp/ui';
 import {
   removePortalWindow,
   setShowPreviewPortal,
-  setShowPreviewPane
+  setShowPreviewPane,
+  toggleVisibleEditor
 } from '../redux/actions';
 import {
   portalWindowSelector,
   showPreviewPortalSelector,
-  showPreviewPaneSelector
+  showPreviewPaneSelector,
+  visibleEditorsSelector
 } from '../redux/selectors';
 import { TOOL_PANEL_HEIGHT } from '../../../../config/misc';
 import ToolPanel from '../components/tool-panel';
-import PreviewPortal from '../components/preview-portal';
+import { ChallengeFile } from '../../../redux/prop-types';
 import EditorTabs from './editor-tabs';
+import { VisibleEditors } from './multifile-editor';
 
 interface MobileLayoutProps {
   editor: JSX.Element | null;
   guideUrl: string;
   hasEditableBoundaries: boolean;
+  challengeFiles: ChallengeFile[];
   hasNotes: boolean;
   hasPreview: boolean;
   instructions: JSX.Element;
@@ -32,16 +34,17 @@ interface MobileLayoutProps {
   preview: JSX.Element;
   onPreviewResize: () => void;
   windowTitle: string;
-  showPreviewPortal: boolean;
   showPreviewPane: boolean;
   removePortalWindow: () => void;
   setShowPreviewPortal: (arg: boolean) => void;
   setShowPreviewPane: (arg: boolean) => void;
+  toggleVisibleEditor: (arg: unknown) => void;
   portalWindow: null | Window;
   updateUsingKeyboardInTablist: (arg0: boolean) => void;
   testOutput: JSX.Element;
   videoUrl: string;
   usesMultifileEditor: boolean;
+  visibleEditors: VisibleEditors;
 }
 
 const tabs = {
@@ -56,27 +59,31 @@ type Tab = keyof typeof tabs;
 
 interface MobileLayoutState {
   currentTab: Tab;
+  currentFile: string;
 }
 
 const mapDispatchToProps = {
   removePortalWindow,
   setShowPreviewPortal,
-  setShowPreviewPane
+  setShowPreviewPane,
+  toggleVisibleEditor
 };
 
 const mapStateToProps = createSelector(
   showPreviewPortalSelector,
   showPreviewPaneSelector,
   portalWindowSelector,
-
+  visibleEditorsSelector,
   (
     showPreviewPortal: boolean,
     showPreviewPane: boolean,
-    portalWindow: null | Window
+    portalWindow: null | Window,
+    visibleEditors: VisibleEditors
   ) => ({
     showPreviewPortal,
     showPreviewPane,
-    portalWindow
+    portalWindow,
+    visibleEditors
   })
 );
 
@@ -88,7 +95,11 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
   state: MobileLayoutState = {
     currentTab: this.props.hasEditableBoundaries
       ? tabs.editor
-      : tabs.instructions
+      : tabs.instructions,
+    currentFile:
+      this.props.challengeFiles.find(
+        file => (file.editableRegionBoundaries ?? []).length > 0
+      )?.fileKey || this.props.challengeFiles[0].fileKey
   };
 
   switchTab = (tab: string): void => {
@@ -148,9 +159,10 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
   handleClick = (): void => this.props.updateUsingKeyboardInTablist(false);
 
   render(): JSX.Element {
-    const { currentTab } = this.state;
+    const { currentTab, currentFile } = this.state;
     const {
       hasEditableBoundaries,
+      challengeFiles,
       instructions,
       editor,
       testOutput,
@@ -158,57 +170,19 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
       hasPreview,
       notes,
       preview,
-      onPreviewResize,
       showPreviewPane,
-      showPreviewPortal,
-      removePortalWindow,
-      setShowPreviewPane,
-      setShowPreviewPortal,
-      portalWindow,
-      windowTitle,
+      toggleVisibleEditor,
       guideUrl,
       videoUrl,
       usesMultifileEditor
     } = this.props;
 
     const displayPreviewPane = hasPreview && showPreviewPane;
-    const displayPreviewPortal = hasPreview && showPreviewPortal;
 
-    const togglePane = (pane: string): void => {
-      if (pane === 'showPreviewPane') {
-        if (!showPreviewPane && showPreviewPortal) {
-          setShowPreviewPortal(false);
-        }
-        setShowPreviewPane(!showPreviewPane);
-        portalWindow?.close();
-        removePortalWindow();
-      } else if (pane === 'showPreviewPortal') {
-        if (!showPreviewPortal && showPreviewPane) {
-          setShowPreviewPane(false);
-        }
-        setShowPreviewPortal(!showPreviewPortal);
-        if (showPreviewPortal) {
-          portalWindow?.close();
-          removePortalWindow();
-        }
-      } else {
-        setShowPreviewPane(true);
-        setShowPreviewPortal(false);
-      }
+    const setCurrentViewedFile = (file: string): void => {
+      this.setState({ currentFile: file });
+      toggleVisibleEditor({ editor: file });
     };
-
-    // sets screen reader text for the portal button
-    function getPortalBtnSrText() {
-      // preview open in main window
-      let portalBtnSrText = i18next.t('aria.move-preview-to-new-window');
-
-      // preview open in external window
-      if (showPreviewPortal && !showPreviewPane) {
-        portalBtnSrText = i18next.t('aria.close-external-preview-window');
-      }
-
-      return portalBtnSrText;
-    }
 
     // Unlike the desktop layout the mobile version does not have an ActionRow,
     // but still needs a way to switch between the different tabs.
@@ -230,9 +204,28 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
                 {i18next.t('learn.editor-tabs.instructions')}
               </TabsTrigger>
             )}
-            <TabsTrigger value={tabs.editor}>
-              {i18next.t('learn.editor-tabs.code')}
-            </TabsTrigger>
+            {challengeFiles.length <= 1 ? (
+              <TabsTrigger value={tabs.editor}>
+                {i18next.t('learn.editor-tabs.editor')}
+              </TabsTrigger>
+            ) : (
+              <div
+                className={`${currentTab == tabs.editor ? 'file-tab-active' : ''} file-tab`}
+              >
+                <select
+                  value={currentFile}
+                  onChange={e => setCurrentViewedFile(e.target.value)}
+                  onClick={() => this.switchTab(tabs.editor)}
+                  className='file-selector'
+                >
+                  {challengeFiles.map(file => (
+                    <option key={file.name} value={file.fileKey}>
+                      {file.name + '.' + file.ext}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {hasNotes && usesMultifileEditor && (
               <TabsTrigger value={tabs.notes}>
                 {i18next.t('learn.editor-tabs.notes')}
@@ -292,22 +285,7 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
               // so we need to manually add it when preview is not active.
               {...(this.state.currentTab === 'preview' ? {} : { hidden: true })}
             >
-              <div className='portal-button-wrap'>
-                <button
-                  className='portal-button'
-                  aria-expanded={!!showPreviewPortal}
-                  onClick={() => togglePane('showPreviewPortal')}
-                >
-                  <span className='sr-only'>{getPortalBtnSrText()}</span>
-                  <FontAwesomeIcon icon={faWindowRestore} />
-                </button>
-              </div>
               {displayPreviewPane && preview}
-              {showPreviewPortal && (
-                <p className='preview-external-window'>
-                  {i18next.t('learn.preview-external-window')}
-                </p>
-              )}
             </TabsContent>
           )}
           {!hasEditableBoundaries && (
@@ -317,24 +295,7 @@ class MobileLayout extends Component<MobileLayoutProps, MobileLayoutState> {
               videoUrl={videoUrl}
             />
           )}
-          {hasPreview && this.state.currentTab !== 'preview' && (
-            <div className='portal-button-wrap'>
-              <button
-                className='portal-button'
-                aria-expanded={!!showPreviewPortal}
-                onClick={() => togglePane('showPreviewPortal')}
-              >
-                <span className='sr-only'>{getPortalBtnSrText()}</span>
-                <FontAwesomeIcon icon={faWindowRestore} />
-              </button>
-            </div>
-          )}
         </Tabs>
-        {displayPreviewPortal && (
-          <PreviewPortal onResize={onPreviewResize} windowTitle={windowTitle}>
-            {preview}
-          </PreviewPortal>
-        )}
       </>
     );
   }
