@@ -31,6 +31,7 @@ interface DesktopLayoutProps {
   challengeType: number;
   editor: ReactElement | null;
   hasEditableBoundaries: boolean;
+  hasDemo: boolean | null;
   hasNotes: boolean;
   hasPreview: boolean;
   instructions: ReactElement;
