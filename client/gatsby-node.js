@@ -75,6 +75,7 @@ exports.createPages = function createPages({ graphql, actions, reporter }) {
               node {
                 challenge {
                   block
+                  blockType
                   certification
                   challengeType
                   dashedName
@@ -320,6 +321,7 @@ exports.createSchemaCustomization = ({ actions }) => {
       challenge: Challenge
     }
     type Challenge {
+      blockType: String
       challengeFiles: [FileContents]
       notes: String
       url: String

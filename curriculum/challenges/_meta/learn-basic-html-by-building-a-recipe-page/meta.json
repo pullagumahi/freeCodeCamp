@@ -1,10 +1,11 @@
 {
   "name": "Learn Basic HTML by Building a Recipe Page",
+  "blockType": "workshop",
   "isUpcomingChange": true,
   "usesMultifileEditor": true,
   "hasEditableBoundaries": true,
   "dashedName": "learn-basic-html-by-building-a-recipe-page",
-  "order": 0,
+  "order": 2,
   "superBlock": "front-end-development",
   "challengeOrder": [
     {
