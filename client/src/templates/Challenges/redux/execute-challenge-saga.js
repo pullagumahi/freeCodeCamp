@@ -240,13 +240,8 @@ function* executeTests(testRunner, tests, testTimeout = 5000) {
   return testResults;
 }
 
-// updates preview frame and the fcc console.
-export function* previewChallengeSaga(action) {
+function* preparePreview(action) {
   const flushLogs = action?.type !== actionTypes.previewMounted;
-  const isBuildEnabled = yield select(isBuildEnabledSelector);
-  if (!isBuildEnabled) {
-    return;
-  }
 
   const isExecuting = yield select(isExecutingSelector);
   // executeChallengeSaga flushes the logs, so there's no need to if that's
@@ -255,14 +250,19 @@ export function* previewChallengeSaga(action) {
     yield put(initLogs());
     yield put(initConsole(''));
   }
-  yield delay(700);
 
   const logProxy = yield channel();
-  const proxyLogger = args => logProxy.put(args);
 
+  yield fork(takeEveryConsole, logProxy);
+
+  return logProxy;
+}
+
+// updates preview frame and the fcc console.
+export function* updateHtmlPreview(logProxy) {
   try {
-    yield fork(takeEveryConsole, logProxy);
-
+    yield delay(700);
+    const proxyLogger = args => logProxy.put(args);
     const challengeData = yield select(challengeDataSelector);
 
     if (canBuildChallenge(challengeData)) {
@@ -282,18 +282,7 @@ export function* previewChallengeSaga(action) {
         const portalDocument = yield select(portalDocumentSelector);
         const finalDocument = portalDocument || document;
 
-        // Python challenges do not use the preview frame, they use a web worker
-        // to run the code. The UI is handled by the xterm component, so there
-        // is no need to update the preview frame.
-        if (
-          challengeData.challengeType === challengeTypes.python ||
-          challengeData.challengeType ===
-            challengeTypes.multifilePythonCertProject
-        ) {
-          yield updatePython(challengeData);
-        } else {
-          yield call(updatePreview, buildData, finalDocument, proxyLogger);
-        }
+        yield call(updatePreview, buildData, finalDocument, proxyLogger);
       } else if (isJavaScriptChallenge(challengeData)) {
         const runUserCode = getTestRunner(buildData, {
           proxyLogger
@@ -315,10 +304,13 @@ export function* previewChallengeSaga(action) {
   }
 }
 
-// TODO: refactor this so that we can use a single saga for all challenge
-// updates (then they can all go in the same `takeLatest` call and be cancelled
-// appropriately)
-function* updatePreviewSaga(action) {
+export function* updatePreviewSaga(action) {
+  const isBuildEnabled = yield select(isBuildEnabledSelector);
+  if (!isBuildEnabled) {
+    return;
+  }
+
+  const logProxy = yield* preparePreview(action);
   const challengeData = yield select(challengeDataSelector);
   if (
     challengeData.challengeType === challengeTypes.python ||
@@ -326,8 +318,7 @@ function* updatePreviewSaga(action) {
   ) {
     yield updatePython(challengeData);
   } else {
-    // all other challenges have to recreate the preview
-    yield previewChallengeSaga(action);
+    yield updateHtmlPreview(logProxy);
   }
 }
 
@@ -368,10 +359,14 @@ function* previewProjectSolutionSaga({ payload }) {
 export function createExecuteChallengeSaga(types) {
   return [
     takeLatest(types.executeChallenge, executeCancellableChallengeSaga),
-    takeLatest(types.updateFile, updatePreviewSaga),
     takeLatest(
-      [types.challengeMounted, types.resetChallenge, types.previewMounted],
-      previewChallengeSaga
+      [
+        types.challengeMounted,
+        types.resetChallenge,
+        types.previewMounted,
+        types.updateFile
+      ],
+      updatePreviewSaga
     ),
     takeLatest(types.projectPreviewMounted, previewProjectSolutionSaga)
   ];
