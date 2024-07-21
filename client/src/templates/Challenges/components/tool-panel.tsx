@@ -34,6 +34,7 @@ const mapDispatchToProps = (dispatch: Dispatch) =>
       openHelpModal: () => openModal('help'),
       openVideoModal: () => openModal('video'),
       openResetModal: () => openModal('reset'),
+      // openSolutionPreviewModal: () => openModal('');
       saveChallenge
     },
     dispatch
